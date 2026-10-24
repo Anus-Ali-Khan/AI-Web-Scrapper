@@ -6,3 +6,7 @@ beautifulsoup4
 lxml 
 html5lib
 python-dotenv
+pandas
+undetected-chromedriver
+setuptools  
+langchain-core
