@@ -17,7 +17,7 @@ from locate import locate_country
 from intent import SearchIntent
 from insta_profile import scrape_profile
 
-CSV_FIELDS = ["username", "full_name", "url", "followers", "following", "posts", "niche", "summary",
+CSV_FIELDS = ["username", "full_name", "url", "external_url", "followers", "following", "posts", "niche", "summary",
               "bio", "email", "account_type", "gender", "location", "country", "country_match",
               "country_evidence", "llm_status", "match_score", "gender_match",
               "relevance", "profile_image"]

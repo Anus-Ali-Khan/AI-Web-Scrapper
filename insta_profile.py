@@ -1,5 +1,6 @@
 """Stage 2: open a public profile and read the numbers/bio from its meta tags.
 Meta tags are far more stable than Instagram's obfuscated CSS classes."""
+import json
 import re
 
 from bs4 import BeautifulSoup
@@ -28,6 +29,18 @@ def _to_int(text: str) -> int | None:
 def _stat(desc: str, label: str) -> int | None:
     m = re.search(rf"([\d.,]+\s?[KMBkmb]?)\s+{label}", desc)
     return _to_int(m.group(1).replace(" ", "")) if m else None
+
+
+def _external_url(html: str) -> str:
+    """The bio link, if Instagram embedded it in the page source (not guaranteed when logged out)."""
+    for pat in (r'"external_url"\s*:\s*"([^"]+)"', r'"bio_links"\s*:\s*\[\s*\{[^}]*?"url"\s*:\s*"([^"]+)"'):
+        m = re.search(pat, html)
+        if m:
+            try:
+                return json.loads('"' + m.group(1) + '"')
+            except ValueError:
+                return m.group(1)
+    return ""
 
 
 def is_login_wall(html: str, current_url: str) -> bool:
@@ -67,5 +80,6 @@ def scrape_profile(browser, username: str) -> dict | None:
         "posts": _stat(og_desc, "Posts"),
         "bio": bio,
         "profile_image": _meta(soup, "og:image"),
+        "external_url": _external_url(html),
         "raw_description": og_desc,  # kept so the LLM can still use it
     }

@@ -74,6 +74,10 @@ def resolve_country(profile: dict, intent, ctx: dict, verify=None) -> tuple[str,
     hit = mentions_country(ctx.get("text", ""), aliases)
     if hit:
         return "yes", f"search snippet ('{hit}')"
+    for found, label in ((detect_phone_country(own_text), "phone code"),
+                         (detect_domain_country(profile.get("external_url", ""), profile.get("bio", "")), "bio link domain")):
+        if found and same_country(found[0], intent.country):
+            return "yes", f"{label} ('{found[1]}')"
     if profile.get("_llm_country") == "no":
         return "no", "profile text points to another country"
     if verify:
@@ -160,3 +164,67 @@ def detect_all_countries(text: str) -> dict:
         if hit:
             found[display_name(key)] = hit[1]
     return found
+
+
+# ---------------------------------------------------------------------------------------------
+# Extra free clues: phone calling codes in the bio and country-code domains in the bio link
+# ---------------------------------------------------------------------------------------------
+CALLING_CODES = {  # "+1" (US/Canada) and "+7" (Russia/Kazakhstan) are shared, so they are left out
+    "92": "Pakistan", "91": "India", "44": "United Kingdom", "971": "United Arab Emirates",
+    "966": "Saudi Arabia", "880": "Bangladesh", "234": "Nigeria", "49": "Germany", "90": "Turkey",
+    "20": "Egypt", "62": "Indonesia", "60": "Malaysia", "63": "Philippines", "55": "Brazil",
+    "52": "Mexico", "33": "France", "34": "Spain", "39": "Italy", "31": "Netherlands",
+    "27": "South Africa", "254": "Kenya", "94": "Sri Lanka", "977": "Nepal", "65": "Singapore",
+    "81": "Japan", "82": "South Korea", "86": "China", "98": "Iran", "974": "Qatar",
+    "965": "Kuwait", "962": "Jordan", "212": "Morocco", "54": "Argentina", "61": "Australia",
+}
+# Only real country-code domains. Generic/hack ones (.com .io .co .me .ly .tv .ee .to ...) are
+# deliberately absent, so linktr.ee, bit.ly, wa.me etc. never count.
+CCTLD = {
+    "pk": "Pakistan", "in": "India", "uk": "United Kingdom", "ae": "United Arab Emirates",
+    "sa": "Saudi Arabia", "bd": "Bangladesh", "ng": "Nigeria", "de": "Germany", "tr": "Turkey",
+    "eg": "Egypt", "id": "Indonesia", "my": "Malaysia", "ph": "Philippines", "br": "Brazil",
+    "mx": "Mexico", "fr": "France", "es": "Spain", "it": "Italy", "nl": "Netherlands",
+    "za": "South Africa", "ke": "Kenya", "lk": "Sri Lanka", "np": "Nepal", "sg": "Singapore",
+    "jp": "Japan", "kr": "South Korea", "cn": "China", "ru": "Russia", "ir": "Iran", "qa": "Qatar",
+    "kw": "Kuwait", "jo": "Jordan", "ma": "Morocco", "ar": "Argentina", "au": "Australia",
+    "ca": "Canada",
+}
+
+
+def _key(name: str) -> str:
+    k = (name or "").strip().lower()
+    return SYNONYMS.get(k, k)
+
+
+def same_country(a: str, b: str) -> bool:
+    return bool(a and b) and _key(a) == _key(b)
+
+
+def detect_phone_country(text: str):
+    """('Pakistan', '+92') from a number like '+92 300 1234567' or '0092 300 1234567' in text."""
+    # WhatsApp links carry the full international number: wa.me/923001234567, ...send?phone=923001234567
+    pattern = r"(?<!\w)(?:\+|00)\s*(\d[\d\s\-.()]{6,18}\d)|wa\.me/\+?(\d{8,15})|[?&]phone=\+?(\d{8,15})"
+    for m in re.finditer(pattern, text or ""):
+        digits = re.sub(r"\D", "", next(g for g in m.groups() if g))
+        if len(digits) < 8:
+            continue
+        for n in (3, 2):
+            if digits[:n] in CALLING_CODES:
+                return CALLING_CODES[digits[:n]], "+" + digits[:n]
+    return None
+
+
+def detect_domain_country(external_url: str = "", bio: str = ""):
+    """('Pakistan', '.pk') from the profile's link, or from http(s):// / www. links inside the bio."""
+    from urllib.parse import urlparse
+    urls = []
+    if external_url:
+        urls.append(external_url)
+    urls += re.findall(r"(?:https?://|www\.)[^\s\"'<>]+", bio or "", re.IGNORECASE)
+    for u in urls:
+        host = (urlparse(u if "://" in u else "http://" + u).hostname or "").lower()
+        tld = host.rsplit(".", 1)[-1] if "." in host else ""
+        if tld in CCTLD:
+            return CCTLD[tld], "." + tld
+    return None
