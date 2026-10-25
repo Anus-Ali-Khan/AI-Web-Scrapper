@@ -12,7 +12,8 @@ from pathlib import Path
 from analyze import enrich_with_llm, passes_basic_filters, passes_country_filter, passes_llm_filters
 from country import resolve_country
 from browser import Browser
-from discover import _search_url, extract_results, iter_candidates, verify_country_via_search
+from discover import (_search_url, extract_results, iter_candidates, username_from_url,
+                      verify_country_via_search)
 from locate import locate_country
 from intent import SearchIntent
 from insta_profile import scrape_profile
@@ -40,6 +41,21 @@ class _Holder:
 
     def close(self):
         self.browser.close()
+
+
+def read_usernames(path: str) -> list[str]:
+    """Usernames from a text/CSV file: one per line, optional @, instagram.com links, or a CSV whose
+    first column is the username. Blank lines and lines starting with # are ignored."""
+    out, seen = [], set()
+    for line in Path(path).read_text(encoding="utf-8-sig").splitlines():
+        cell = line.split(",")[0].strip().strip('"')
+        if not cell or cell.startswith("#"):
+            continue
+        name = username_from_url(cell) if "instagram.com" in cell else cell.lstrip("@")
+        if name and re.fullmatch(r"[A-Za-z0-9._]{1,30}", name) and name.lower() not in seen:
+            seen.add(name.lower())
+            out.append(name)
+    return out
 
 
 def _slug(intent: SearchIntent) -> str:
@@ -93,7 +109,8 @@ def _find_single_profile(intent, holder, use_llm, report):
 def run_search(intent: SearchIntent, headless: bool = True, use_llm: bool = True,
                out_dir: str = "results", proxy: str | None = None, on_progress=None,
                delay: tuple = (4, 9), cooldown_seconds: int = 300, max_cooldowns: int = 3,
-               restart_every: int = 40, verify_country: bool = True, find_country: bool = False):
+               restart_every: int = 40, verify_country: bool = True, find_country: bool = False,
+               usernames_file: str | None = None):
     """Returns (accepted_profiles, stats). Results are saved as you go; re-running the same
     prompt resumes where it stopped."""
     report = on_progress or (lambda d, t, m: print(f"[{d}/{t}] {m}"))
@@ -122,7 +139,11 @@ def run_search(intent: SearchIntent, headless: bool = True, use_llm: bool = True
                 f.write(u.lower() + "\n")
 
         context: dict = {}
-        stream = iter_candidates(holder.get, intent, seen, context)
+        if usernames_file:    # skip searching: check the usernames you already collected elsewhere
+            stream = iter(read_usernames(usernames_file))
+            report(len(accepted), intent.count, f"Loaded usernames from {usernames_file}")
+        else:
+            stream = iter_candidates(holder.get, intent, seen, context)
         queue: deque = deque()
         failed_batch: list = []
         cooldowns = since_restart = 0
@@ -130,7 +151,8 @@ def run_search(intent: SearchIntent, headless: bool = True, use_llm: bool = True
         while len(accepted) < intent.count:
             username = queue.popleft() if queue else next(stream, None)
             if username is None:
-                stats["stopped"] = "ran out of candidates (search engines gave no more profiles)"
+                stats["stopped"] = ("reached the end of the username file" if usernames_file else
+                                    "ran out of candidates (see the [discover] lines above for why)")
                 break
             if username.lower() in seen:
                 continue

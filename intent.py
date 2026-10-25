@@ -149,7 +149,7 @@ def parse_prompt(prompt: str, use_llm: bool = True) -> SearchIntent:
         country=(str(pick("country")).strip() if pick("country") else None),
         gender=gender if gender in ("male", "female") else None,
         hashtags=[str(h).lstrip("#").lower() for h in (pick("hashtags", []) or [])],
-        count=max(1, min(_as_int(pick("count", 20)) or 20, 2000)),
+        count=max(1, min(_as_int(pick("count", 20)) or 20, 100000)),
         min_followers=_as_int(pick("min_followers")),
         max_followers=_as_int(pick("max_followers")),
     )

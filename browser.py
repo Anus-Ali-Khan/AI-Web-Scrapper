@@ -4,12 +4,16 @@ import time
 
 import undetected_chromedriver as uc
 
+# undetected-chromedriver calls quit() a second time when Python exits; on Windows that prints
+# 'OSError: [WinError 6] The handle is invalid'. We always call close() ourselves, so turn it off.
+uc.Chrome.__del__ = lambda self: None
+
 
 class Browser:
-    def __init__(self, headless: bool = True, version_main: int | None = 155,
+    def __init__(self, headless: bool = True, version_main: int | None = None,
                  proxy: str | None = None):
         # proxy example: "http://123.45.67.89:8080" (no username/password support)
-        # Keep version_main aligned with the installed Chrome major version.
+        # If Chrome fails with a version mismatch, pass version_main=<your Chrome major version>.
         options = uc.ChromeOptions()
         options.add_argument("--window-size=1280,900")
         options.add_argument("--lang=en-US")

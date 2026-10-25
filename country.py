@@ -13,7 +13,10 @@ SYNONYMS = {"usa": "united states", "us": "united states", "america": "united st
 BUILTIN = {
     "pakistan": ["Pakistani", "Karachi", "Lahore", "Islamabad", "Rawalpindi", "Faisalabad", "Peshawar", "Multan", "PK", "🇵🇰"],
     "india": ["Indian", "Mumbai", "Delhi", "New Delhi", "Bangalore", "Bengaluru", "Hyderabad", "Chennai", "Kolkata", "Pune", "🇮🇳"],
-    "united states": ["USA", "American", "New York", "Los Angeles", "San Francisco", "Chicago", "Texas", "California", "Seattle", "🇺🇸"],
+    "united states": ["USA", "American", "New York", "Los Angeles", "San Francisco", "Chicago", "Texas", "California",
+                      "Seattle", "Houston", "Dallas", "Austin", "San Diego", "San Jose", "Denver", "Boston", "Atlanta",
+                      "Miami", "Las Vegas", "Nashville", "Brooklyn", "Silicon Valley", "Palo Alto", "Washington DC",
+                      "Philadelphia", "Phoenix", "Minneapolis", "Orlando", "Tampa", "🇺🇸"],
     "united kingdom": ["UK", "British", "London", "Manchester", "Birmingham", "Scotland", "🇬🇧"],
     "canada": ["Canadian", "Toronto", "Vancouver", "Montreal", "Ottawa", "Calgary", "🇨🇦"],
     "australia": ["Australian", "Sydney", "Melbourne", "Brisbane", "Perth", "🇦🇺"],
@@ -78,6 +81,10 @@ def resolve_country(profile: dict, intent, ctx: dict, verify=None) -> tuple[str,
                          (detect_domain_country(profile.get("external_url", ""), profile.get("bio", "")), "bio link domain")):
         if found and same_country(found[0], intent.country):
             return "yes", f"{label} ('{found[1]}')"
+    for src, label in ((own_text, "profile text"), (ctx.get("text", ""), "search snippet")):
+        d = detect_any_country(src)
+        if d and same_country(d[0], intent.country):
+            return "yes", f"{label} ('{d[1]}')"
     if profile.get("_llm_country") == "no":
         return "no", "profile text points to another country"
     if verify:
@@ -137,6 +144,11 @@ def _earliest(text: str, aliases: list):
     return best
 
 
+# "Austin, TX" / "Los Angeles, CA". Left out on purpose: codes that are also common words or other
+# things (IN OR ME HI OK ID DE LA AL MD MA)
+US_STATE_RE = re.compile(r"[A-Za-z]{3,},\s*(?:AZ|AR|CA|CO|CT|FL|GA|IL|IA|KS|KY|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY|DC)\b")
+
+
 def detect_any_country(text: str):
     """(country, matched_alias) for the best country mentioned in text, else None.
     Strong clues (country name, flag emoji, short code like PK/UK) beat weak ones (cities, demonyms)."""
@@ -151,6 +163,10 @@ def detect_any_country(text: str):
             hit = _earliest(text, pool)
             if hit and (best is None or hit[0] < best[0]):
                 best = (hit[0], name, hit[1])
+        if strong_only:
+            m = US_STATE_RE.search(text)
+            if m and (best is None or m.start() < best[0]):
+                best = (m.start(), "United States", m.group(0))
         if best:
             return best[1], best[2]
     return None

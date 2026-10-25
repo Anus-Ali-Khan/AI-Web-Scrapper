@@ -10,3 +10,4 @@ pandas
 undetected-chromedriver
 setuptools  
 langchain-core
+requests
